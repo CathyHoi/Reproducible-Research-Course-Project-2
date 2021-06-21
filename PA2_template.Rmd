@@ -1,0 +1,168 @@
+---
+title: "Reproducible Research Week 4 Course Project 2"
+output: html_document
+---
+
+```{r setwd}
+library(ggplot2)  
+library(plyr) 
+library(dplyr)
+setwd("C:/Users/CathyHoi/Dropbox/PhD docs/Certificates/Reproducible Research Course Project 2")
+```
+
+Read and process data
+```{r process}
+data<-read.csv("repdata_data_StormData.csv")
+
+## Processing data
+dim(data)
+
+str(data)
+
+## Extracting variables of interest for analysis
+selected <- c( "EVTYPE", "FATALITIES", "INJURIES", "PROPDMG", "PROPDMGEXP", "CROPDMG", "CROPDMGEXP")
+selecteddata <- data[, selected]
+
+## Check the first and last few rows 
+head(selecteddata)
+tail(selecteddata)
+
+## Check the missing values in the dataset
+sum(is.na(selecteddata$FATALITIES))
+sum(is.na(selecteddata$INJURIES))
+sum(is.na(selecteddata$PROPDMG))
+sum(is.na(selecteddata$CROPDMG))
+sum(is.na(selecteddata$PROPDMGEXP))
+sum(is.na(selecteddata$CROPDMGEXP))
+```
+
+## Group any event that contains "WIND" into one type, and the same for all variables  
+
+```{r group}
+## List the first 10 most frequent events 
+sort(table(selecteddata$EVTYPE), decreasing = TRUE) [1:10]
+
+selecteddata$EVENT <- "OTHER"
+
+selecteddata$EVENT[grep("HAIL", selecteddata$EVTYPE, ignore.case = TRUE)] <- "HAIL"
+selecteddata$EVENT[grep("HEAT", selecteddata$EVTYPE, ignore.case = TRUE)] <- "HEAT"
+selecteddata$EVENT[grep("FLOOD", selecteddata$EVTYPE, ignore.case = TRUE)] <- "FLOOD"
+selecteddata$EVENT[grep("WIND", selecteddata$EVTYPE, ignore.case = TRUE)] <- "WIND"
+selecteddata$EVENT[grep("STORM", selecteddata$EVTYPE, ignore.case = TRUE)] <- "STORM"
+selecteddata$EVENT[grep("SNOW", selecteddata$EVTYPE, ignore.case = TRUE)] <- "SNOW"
+selecteddata$EVENT[grep("TORNADO", selecteddata$EVTYPE, ignore.case = TRUE)] <- "TORNADO"
+selecteddata$EVENT[grep("WINTER", selecteddata$EVTYPE, ignore.case = TRUE)] <- "WINTER"
+selecteddata$EVENT[grep("RAIN", selecteddata$EVTYPE, ignore.case = TRUE)] <- "RAIN"
+```
+
+```{r list}
+## List them again
+sort(table(selecteddata$EVENT), decreasing = TRUE)
+sort(table(selecteddata$PROPDMGEXP), decreasing = TRUE)[1:10]
+sort(table(selecteddata$CROPDMGEXP), decreasing = TRUE)[1:10]
+```
+
+## Create new variables
+```{r new variables}
+selecteddata$PROPDMGEXP <- as.character(selecteddata$PROPDMGEXP)
+selecteddata$PROPDMGEXP[is.na(selecteddata$PROPDMGEXP)] <- 0 
+selecteddata$PROPDMGEXP[!grepl("K|M|B", selecteddata$PROPDMGEXP, ignore.case = TRUE)] <- 0 
+selecteddata$PROPDMGEXP[grep("K", selecteddata$PROPDMGEXP, ignore.case = TRUE)] <- "3"
+selecteddata$PROPDMGEXP[grep("M", selecteddata$PROPDMGEXP, ignore.case = TRUE)] <- "6"
+selecteddata$PROPDMGEXP[grep("B", selecteddata$PROPDMGEXP, ignore.case = TRUE)] <- "9"
+selecteddata$PROPDMGEXP <- as.numeric(as.character(selecteddata$PROPDMGEXP))
+selecteddata$property.damage <- selecteddata$PROPDMG * 10^selecteddata$PROPDMGEXP
+selecteddata$CROPDMGEXP <- as.character(selecteddata$CROPDMGEXP)
+selecteddata$CROPDMGEXP[is.na(selecteddata$CROPDMGEXP)] <- 0 
+selecteddata$CROPDMGEXP[!grepl("K|M|B", selecteddata$CROPDMGEXP, ignore.case = TRUE)] <- 0 
+selecteddata$CROPDMGEXP[grep("K", selecteddata$CROPDMGEXP, ignore.case = TRUE)] <- "3"
+selecteddata$CROPDMGEXP[grep("M", selecteddata$CROPDMGEXP, ignore.case = TRUE)] <- "6"
+selecteddata$CROPDMGEXP[grep("B", selecteddata$CROPDMGEXP, ignore.case = TRUE)] <- "9"
+selecteddata$CROPDMGEXP <- as.numeric(as.character(selecteddata$CROPDMGEXP))
+selecteddata$crop.damage <- selecteddata$CROPDMG * 10^selecteddata$CROPDMGEXP
+```
+
+## List the first 10 most appearred values of property and crop damage 
+```{r list 2}
+sort(table(selecteddata$property.damage), decreasing = TRUE)[1:10]
+
+sort(table(selecteddata$crop.damage), decreasing = TRUE)[1:10]
+```
+
+Answer for the question: Across the United States, which types of events (as indicated in the EVTYPE\color{red}{\verb|EVTYPE|}EVTYPE variable) are most harmful with respect to population health?
+
+```{r quesion1}
+# Both fatalities and injuries 
+FatalInj <- ddply(selecteddata, .(EVENT), summarize, Total = sum(FATALITIES + INJURIES,  na.rm = TRUE))
+FatalInj$type <- "Fatalities and Injuries"
+
+# Fatalities only
+Fatal <- ddply(selecteddata, .(EVENT), summarize, Total = sum(FATALITIES, na.rm = TRUE))
+Fatal$type <- "fatalities"
+
+# Injuries only
+Inj <- ddply(selecteddata, .(EVENT), summarize, Total = sum(INJURIES, na.rm = TRUE))
+Inj$type <- "injuries"
+
+# Combine all into one variable
+Health <- rbind(Fatal, Inj)
+
+HarmHealth <- join (Fatal, Inj, by="EVENT", type="inner")
+HarmHealth
+```
+
+Plot 1 for the question
+```{r plot1}
+# Transform "EVENT" to factor variable
+Health$EVENT <- as.factor(Health$EVENT)
+
+# Plot fatalities and injuries 
+Plot1 <- ggplot(Health, aes(x = EVENT, y = Total, fill = type)) + geom_bar(stat = "identity") +
+                coord_flip() +
+                xlab("Event Type") + 
+                ylab("Total number of health impact") +
+                ggtitle("Weather event types impact on public health") +
+                theme(plot.title = element_text(hjust = 0.5))
+
+Plot1  
+```
+
+Answer for the question: Across the United States, which types of events have the greatest economic consequences?
+
+```{r question2}
+# Both property damage and crop damage 
+PropCrop <- ddply(selecteddata, .(EVENT), summarize, Total = sum(property.damage + crop.damage,  na.rm = TRUE))
+PropCrop$type <- "property and crop damage"
+
+# Property damage only
+Prop <- ddply(selecteddata, .(EVENT), summarize, Total = sum(property.damage, na.rm = TRUE))
+Prop$type <- "property"
+
+# Crop damage only
+Crop <- ddply(selecteddata, .(EVENT), summarize, Total = sum(crop.damage, na.rm = TRUE))
+Crop$type <- "crop"
+
+# Combine all into one variable
+Economic <- rbind(Prop, Crop)
+
+
+HarmEconomic <- join (Prop, Crop, by="EVENT", type="inner")
+HarmEconomic
+```
+
+Plot 2 for the question
+
+```{r plot2}
+# Transform "EVENT" to factor variable
+Economic$EVENT <- as.factor(Economic$EVENT)
+
+# Plot property and crop damage 
+Plot2 <- ggplot(Economic, aes(x = EVENT, y = Total, fill = type)) + geom_bar(stat = "identity") +
+                coord_flip() +
+                xlab("Event Type") + 
+                ylab("Total damage in dollars") +
+                ggtitle("Weather event types impact on property and crop damage") +
+                theme(plot.title = element_text(hjust = 0.5))
+
+Plot2
+```
